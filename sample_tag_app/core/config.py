@@ -34,7 +34,7 @@ PROGRAMS: dict[str, ProgramConfig] = {
         template_file="D240_Sample_Tag_Template.xlsx",
         program_source="subclass",
         default_yellow_band=0.03,
-        notes=("卡片上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 27）。",),
+        notes=("Sample Tag 上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 27）。",),
     ),
     "D53": ProgramConfig(
         code="D53",
@@ -42,7 +42,7 @@ PROGRAMS: dict[str, ProgramConfig] = {
         template_file="D53_Sample_Tag_Template.xlsx",
         program_source="subclass",
         default_yellow_band=0.04,
-        notes=("卡片上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 23）。",),
+        notes=("Sample Tag 上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 23）。",),
     ),
 }
 

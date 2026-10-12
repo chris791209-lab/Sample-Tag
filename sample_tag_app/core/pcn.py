@@ -172,10 +172,10 @@ def read_pcn(data: bytes, filename: str = "") -> tuple[pd.DataFrame, list[str]]:
 
     dup = df["style"].ne("") & df["style"].duplicated(keep=False)
     if dup.any():
-        warnings.append(f"MFG Style 重複 {int(df.loc[dup, 'style'].nunique())} 組（已標示，仍可各自產生卡片）。")
+        warnings.append(f"MFG Style 重複 {int(df.loc[dup, 'style'].nunique())} 組（已標示，仍可各自產生 Sample Tag）。")
     nostyle = df["style"].eq("")
     if nostyle.any():
-        warnings.append(f"{int(nostyle.sum())} 列沒有 MFG Style（無法產生條碼，預設不勾選）。")
+        warnings.append(f"{int(nostyle.sum())} 列沒有 MFG Style（無法產生條碼，預設不產生 Sample Tag）。")
     return df, warnings
 
 

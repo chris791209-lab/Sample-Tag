@@ -1,5 +1,5 @@
 """Sample Tag 產生器 — D240 / D53
-Target 新一季範本（IMU 目標）＋ PCN ➜ Sample Tag Excel（條碼、縮圖內嵌）＋ 每張卡 PNG ＋ 列印 PDF。
+Target 新一季範本（更新 IMU Goal）＋ PCN ➜ Sample Tag Excel（條碼、縮圖內嵌）＋ 每張 Sample Tag PNG ＋ 列印 PDF。
 Run:  streamlit run app.py
 """
 from __future__ import annotations
@@ -177,12 +177,11 @@ def column_config():
 # ---------------------------------------------------------------------------
 # product pictures panel
 # ---------------------------------------------------------------------------
-def photo_panel(code, df, photos, notes, spk_images, photo_map):
-    sel = df[df["selected"] & df["style"].ne("")]
+def photo_panel(code, df, sel, photos, notes, spk_images, photo_map):
     with_pic = int(sel["photo"].eq("🖼️").sum())
     auto = [p for p in photos if p.rule in ("exact", "contains")]
     unmatched = [p for p in photos if not p.matched]
-    with st.expander(f"🖼️ 產品圖片：已勾選的 {len(sel)} 張卡中有 {with_pic} 張有圖"
+    with st.expander(f"🖼️ 產品圖片：要產生的 {len(sel)} 張 Sample Tag 中有 {with_pic} 張有圖"
                      + (f"　｜　{len([p for p in unmatched if p.rule != 'manual'])} 張圖待指定" if unmatched else ""),
                      expanded=bool(unmatched)):
         for n in notes:
@@ -240,9 +239,9 @@ def sample_tag_tab(cfg):
     builtin_bytes = cfg.template_path.read_bytes()
     c0, c1, c2 = st.columns(3)
     with c0:
-        newtpl = st.file_uploader("① Target 新一季範本（IMU 目標）", type=["xlsx", "xlsm"], key=f"{code}_newtpl",
-                                  help="Target Sourcing Manager 提供的新一季 Sample Tag 範本，只取用其中的 IMU 目標（Dropdowns）；"
-                                       "卡片版面、公式一律以內建範本為準。未放入時沿用內建範本的 IMU 目標。")
+        newtpl = st.file_uploader("① Target 新一季範本（更新 IMU Goal）", type=["xlsx", "xlsm"], key=f"{code}_newtpl",
+                                  help="Target Sourcing Manager 提供的新一季 Sample Tag 範本，只取用其中的 IMU Goal（Dropdowns）；"
+                                       "Sample Tag 版面、公式一律以內建範本為準。未放入時沿用內建範本的 IMU Goal。")
     with c1:
         pcn_file = st.file_uploader("② PCN（必填）", type=["xlsx"], key=f"{code}_pcn",
                                     help="Target PCN 匯出檔，例如「2027 C5 D53 WSc - Boo Basket & Wrap.xlsx」")
@@ -360,26 +359,27 @@ def sample_tag_tab(cfg):
                    height=min(520, 38 + 35 * max(3, len(shown))), num_rows="fixed")
 
     df = st.session_state[f"{code}_df"]
-    sel = df[df["selected"] & df["style"].ne("")]
+    # generate exactly what the filter shows: checked rows within the current filter only
+    sel = df[df["selected"] & df["style"].ne("") & mask.reindex(df.index, fill_value=False)]
     n_issue = int((sel["issues"] != "").sum())
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("要產生的卡片", len(sel))
+    m1.metric("要產生的 Sample Tag", len(sel), help="目前篩選結果中有勾選「產生」的品項")
     m2.metric("PCN 品項", len(df))
-    m3.metric("有提醒的卡片", n_issue)
+    m3.metric("有提醒的 Sample Tag", n_issue)
     m4.metric("Excel 區塊（每塊 2 張）", (len(sel) + 1) // 2)
 
     if pic_files:
-        photo_panel(code, df, photos, photo_notes, spk_images, photo_map)
+        photo_panel(code, df, sel, photos, photo_notes, spk_images, photo_map)
 
     if sel.empty:
-        st.info("請勾選至少一張卡片。")
+        st.info("目前篩選結果中沒有勾選任何品項，請勾選至少一張 Sample Tag。")
         return
 
     renderer = cached_renderer(tpl_bytes)
     vendor = info.vendor_default or "Lucky Star"
     vendor_fill = info.vendor_color(vendor)
 
-    with st.expander("預覽前 4 張卡片", expanded=True):
+    with st.expander("預覽前 4 張 Sample Tag", expanded=True):
         cards_prev = make_cards(sel.head(4), info, basis, spk_images, photo_map, goals)
         cols = st.columns(2)
         for i, c in enumerate(cards_prev):
@@ -396,7 +396,7 @@ def sample_tag_tab(cfg):
             img = renderer.render(c, vendor=vendor, vendor_fill=vendor_fill, goal=c["goal"], band=band)
             imgs.append(img)
             pngs.append((f"{i + 1:03d}_{safe_name(c['style'])}.png", to_png_bytes(img)))
-            prog.progress(0.1 + 0.75 * (i + 1) / len(cards), text=f"繪製卡片 {i + 1}/{len(cards)}…")
+            prog.progress(0.1 + 0.75 * (i + 1) / len(cards), text=f"繪製 Sample Tag {i + 1}/{len(cards)}…")
         prog.progress(0.9, text="組成 PDF…")
         pdf = cards_pdf(imgs)
         prog.progress(1.0, text="完成")
@@ -408,7 +408,7 @@ def sample_tag_tab(cfg):
 
     out = st.session_state.get(f"{code}_out")
     if out:
-        st.success(f"完成：{out['n']} 張卡片" + (f"（含縮圖 {out['thumbs']} 張）" if out["thumbs"] else ""))
+        st.success(f"完成：{out['n']} 張 Sample Tag" + (f"（含縮圖 {out['thumbs']} 張）" if out["thumbs"] else ""))
         d1, d2, d3 = st.columns(3)
         d1.download_button("⬇️ Excel（Sample Tag）", out["xlsx"], f"{out['stem']}.xlsx", XLSX_MIME,
                            key=f"{code}_dlx", width="stretch")
