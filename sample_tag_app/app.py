@@ -1,4 +1,4 @@
-"""Sample Tag 產生器 — D240 / D53
+"""Sample Tag 生成器 — D240 / D53
 Target 新一季範本（更新 IMU Goal）＋ PCN ➜ Sample Tag Excel（條碼、縮圖內嵌）＋ 每張 Sample Tag PNG ＋ 列印 PDF。
 Run:  streamlit run app.py
 """
@@ -32,7 +32,7 @@ from core.pcn import assign_subclass, flag_issues, init_editable, norm_subclass,
 from core.pipeline import build_xlsx, make_cards, output_stem, png_zip, safe_name
 from core.render import CardRenderer, cards_pdf, to_png_bytes
 
-st.set_page_config(page_title="Sample Tag 產生器", page_icon="🏷️", layout="wide")
+st.set_page_config(page_title="Sample Tag 生成器", page_icon="🏷️", layout="wide")
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
@@ -55,7 +55,7 @@ def gate() -> bool:
         return True
     if st.session_state.get("auth_ok"):
         return True
-    st.title("🏷️ Sample Tag 產生器")
+    st.title("🏷️ Sample Tag 生成器")
     with st.form("login"):
         entered = st.text_input("密碼", type="password")
         if st.form_submit_button("進入"):
@@ -148,7 +148,7 @@ def _apply_edits(code: str):
 
 def column_config():
     return {
-        "selected": st.column_config.CheckboxColumn("產生", width="small"),
+        "selected": st.column_config.CheckboxColumn("生成", width="small"),
         "style": st.column_config.TextColumn("MFG Style #", disabled=True),
         "photo": st.column_config.TextColumn("圖", disabled=True, width="small"),
         "description": st.column_config.TextColumn("品名", disabled=True, width="large"),
@@ -163,7 +163,7 @@ def column_config():
         "ly_retail": st.column_config.NumberColumn("LY Retail", format="dollar"),
         "ly_duty": st.column_config.NumberColumn("LY Duty", format="percent"),
         "comments": st.column_config.TextColumn("Comments", width="medium"),
-        "issues": st.column_config.TextColumn("提醒", disabled=True, width="medium"),
+        "issues": st.column_config.TextColumn("待確認", disabled=True, width="medium", help="PCN 缺漏或需留意的資料"),
         "pcn_item_id": st.column_config.TextColumn("PCN Item ID", disabled=True),
         "spark_pid": st.column_config.TextColumn("Spark PID", disabled=True),
         "apex_id": st.column_config.TextColumn("Apex ID", disabled=True),
@@ -181,7 +181,7 @@ def photo_panel(code, df, sel, photos, notes, spk_images, photo_map):
     with_pic = int(sel["photo"].eq("🖼️").sum())
     auto = [p for p in photos if p.rule in ("exact", "contains")]
     unmatched = [p for p in photos if not p.matched]
-    with st.expander(f"🖼️ 產品圖片：要產生的 {len(sel)} 張 Sample Tag 中有 {with_pic} 張有圖"
+    with st.expander(f"🖼️ 產品圖片：要生成的 {len(sel)} 張 Sample Tag 中有 {with_pic} 張有圖"
                      + (f"　｜　{len([p for p in unmatched if p.rule != 'manual'])} 張圖待指定" if unmatched else ""),
                      expanded=bool(unmatched)):
         for n in notes:
@@ -283,7 +283,7 @@ def sample_tag_tab(cfg):
     no_sub = int((df["style"].ne("") & df["subclass"].eq("")).sum())
     if no_sub:
         st.warning(f"有 {no_sub} 個品項 PCN 沒有 Subclass，請在表格的 Subclass 欄手動填入（數字即可），"
-                   "系統將自動抓取該季 IMU。可勾「只看有提醒的」快速找出。")
+                   "系統將自動抓取該季 IMU。可勾「只看待確認」快速找出。")
 
     for w in warns:
         st.warning(w)
@@ -326,7 +326,7 @@ def sample_tag_tab(cfg):
     with f2:
         q = st.text_input("搜尋（Style / 品名 / DPCI）", key=f"{code}_q")
     with f3:
-        only_issue = st.checkbox("只看有提醒的", key=f"{code}_oi")
+        only_issue = st.checkbox("只看待確認", key=f"{code}_oi")
     mask = pd.Series(True, index=df.index)
     if pf:
         mask &= df["subclass"].isin(pf)
@@ -362,11 +362,10 @@ def sample_tag_tab(cfg):
     # generate exactly what the filter shows: checked rows within the current filter only
     sel = df[df["selected"] & df["style"].ne("") & mask.reindex(df.index, fill_value=False)]
     n_issue = int((sel["issues"] != "").sum())
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("要產生的 Sample Tag", len(sel), help="目前篩選結果中有勾選「產生」的品項")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("要生成的 Sample Tag", len(sel), help="目前篩選結果中有勾選「生成」的品項")
     m2.metric("PCN 品項", len(df))
-    m3.metric("有提醒的 Sample Tag", n_issue)
-    m4.metric("Excel 區塊（每塊 2 張）", (len(sel) + 1) // 2)
+    m3.metric("待確認的 Sample Tag", n_issue)
 
     if pic_files:
         photo_panel(code, df, sel, photos, photo_notes, spk_images, photo_map)
@@ -379,17 +378,17 @@ def sample_tag_tab(cfg):
     vendor = info.vendor_default or "Lucky Star"
     vendor_fill = info.vendor_color(vendor)
 
-    with st.expander("預覽前 4 張 Sample Tag", expanded=True):
+    with st.expander("預覽前 4 張", expanded=True):
         cards_prev = make_cards(sel.head(4), info, basis, spk_images, photo_map, goals)
         cols = st.columns(2)
         for i, c in enumerate(cards_prev):
             img = renderer.render(c, vendor=vendor, vendor_fill=vendor_fill, goal=c["goal"], band=band)
             cols[i % 2].image(img, width="stretch")
 
-    if st.button(f"產生 {len(sel)} 張 Sample Tag", type="primary", key=f"{code}_go"):
+    if st.button(f"生成 {len(sel)} 張 Sample Tag", type="primary", key=f"{code}_go"):
         prog = st.progress(0.0, text="準備資料…")
         cards = make_cards(sel, info, basis, spk_images, photo_map, goals)
-        prog.progress(0.05, text="產生 Excel…")
+        prog.progress(0.05, text="生成 Excel…")
         xlsx = build_xlsx(tpl_bytes, cards, info, band)
         pngs, imgs = [], []
         for i, c in enumerate(cards):
@@ -422,8 +421,8 @@ def sample_tag_tab(cfg):
 def main():
     if not gate():
         return
-    st.title("🏷️ Sample Tag 產生器")
-    st.caption("上傳 PCN ➜ 勾選品項／篩選 Subclass ➜ 一鍵產生 Sample Tag Excel、每張 Tag 的獨立圖片檔（PNG）、整份列印檔（PDF）")
+    st.title("🏷️ Sample Tag 生成器")
+    st.caption("上傳 PCN ➜ 勾選品項／篩選 Subclass ➜ 一鍵生成 Sample Tag Excel、每張 Tag 的獨立圖片檔（PNG）、整份列印檔（PDF）")
     tabs = st.tabs([p.title for p in PROGRAMS.values()])
     for tab, cfg in zip(tabs, PROGRAMS.values()):
         with tab:
