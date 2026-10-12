@@ -179,28 +179,27 @@ def read_pcn(data: bytes, filename: str = "") -> tuple[pd.DataFrame, list[str]]:
     return df, warnings
 
 
-def assign_programs(df: pd.DataFrame, cfg, programs: list[str], filename: str,
-                    override: str | None = None) -> pd.DataFrame:
-    """Fill the 'program' column according to the program's rule."""
+def norm_subclass(v) -> str:
+    """'27' / '27.0' / 'subclass 27' / 'Subclass27' -> 'Subclass 27'; '' stays ''."""
+    t = _clean_text(v)
+    if not t:
+        return ""
+    m = re.search(r"(\d+)", t)
+    return f"Subclass {int(m.group(1))}" if m else t.strip()
+
+
+def assign_subclass(df: pd.DataFrame) -> pd.DataFrame:
+    """Card row 3 = the item's Subclass exactly as the PCN has it ("Subclass <ID>").
+    The IMU target is looked up by that same Subclass (D240 and D53 alike)."""
     df = df.copy()
-    if override:
-        df["program"] = override
-        return df
-    if cfg.program_source == "subclass":
-        def f(sid):
-            sid = _clean_text(sid)
-            if not sid:
-                return ""
-            name = f"Subclass {sid}"
-            return match_program(name, programs) or name
-        df["program"] = df["subclass_id"].map(f)
-    else:
-        guess = program_from_filename(filename)
-        df["program"] = match_program(guess, programs) or guess
+    df["subclass_pcn"] = df["subclass_id"].map(norm_subclass)
+    df["subclass"] = df["subclass_pcn"]
+    df["program"] = df["subclass"]
     return df
 
 
 def flag_issues(df: pd.DataFrame, goals: dict) -> pd.DataFrame:
+    """goals = {"Subclass 27": 0.714, ...} (IMU+Duty Goal actually used)."""
     """Per-row data-quality notes shown in the app (and only there)."""
     df = df.copy()
     dup = df["style"].ne("") & df["style"].duplicated(keep=False)
@@ -221,10 +220,8 @@ def flag_issues(df: pd.DataFrame, goals: dict) -> pd.DataFrame:
             n.append("缺零售價")
         if r.get("duty") is None or pd.isna(r.get("duty")):
             n.append("缺 Duty")
-        if not r.get("program"):
-            n.append("缺 Program")
-        elif r["program"] not in goals:
-            n.append("Program 不在 Dropdowns")
+        if not r.get("subclass"):
+            n.append("缺 Subclass（可在 Subclass 欄填入）")
         notes.append("、".join(n))
     df["issues"] = notes
     return df

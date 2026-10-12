@@ -41,7 +41,8 @@ def _clean(v):
 
 
 def make_cards(df: pd.DataFrame, info: TemplateInfo, imu_basis: str = "imu_duty",
-               spk_images: dict | None = None, photo_map: dict | None = None) -> list[dict]:
+               spk_images: dict | None = None, photo_map: dict | None = None,
+               goal_map: dict | None = None) -> list[dict]:
     """photo_map = {item index: png} from uploaded pictures (hand-assigned or
     matched by file name); it wins over the SPK picture of the same item."""
     cards = []
@@ -55,7 +56,11 @@ def make_cards(df: pd.DataFrame, info: TemplateInfo, imu_basis: str = "imu_duty"
                     c[k] = v / 100 if (k == "ly_duty" and v > 1) else v
                 except ValueError:
                     c[k] = None
-        c["goal"] = info.goal(c.get("program") or "", imu_basis)
+        sub = c.get("program") or ""
+        if goal_map is not None:
+            c["goal"] = goal_map.get(sub)
+        else:
+            c["goal"] = info.goal(sub, imu_basis) if sub else None
         c["barcode_png"] = barcode_img.png_bytes(str(c["style"])) if c.get("style") else None
         c["thumb_png"] = ((photo_map or {}).get(idx)
                           or (spk.lookup(spk_images, c) if spk_images else None))

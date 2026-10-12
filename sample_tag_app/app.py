@@ -1,10 +1,11 @@
 """Sample Tag 產生器 — D240 / D53
-PCN ➜ Sample Tag Excel（條碼、縮圖內嵌）＋ 每張卡 PNG ＋ 列印 PDF；另含 Dropdown 更新。
+Target 新一季範本（IMU 目標）＋ PCN ➜ Sample Tag Excel（條碼、縮圖內嵌）＋ 每張卡 PNG ＋ 列印 PDF。
 Run:  streamlit run app.py
 """
 from __future__ import annotations
 
 import hashlib
+import re
 import os
 from datetime import date
 
@@ -13,15 +14,14 @@ import streamlit as st
 
 from core import images, spk
 from core.config import PROGRAMS
-from core.dropdowns import diff_templates, parse_template, update_dropdowns
-from core.pcn import assign_programs, flag_issues, init_editable, program_from_filename, read_pcn
-from core.pipeline import build_xlsx, imu_status, make_cards, output_stem, png_zip, safe_name
+from core.dropdowns import parse_template, update_dropdowns
+from core.pcn import assign_subclass, flag_issues, init_editable, norm_subclass, read_pcn
+from core.pipeline import build_xlsx, make_cards, output_stem, png_zip, safe_name
 from core.render import CardRenderer, cards_pdf, to_png_bytes
 
 st.set_page_config(page_title="Sample Tag 產生器", page_icon="🏷️", layout="wide")
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-XLSM_MIME = "application/vnd.ms-excel.sheet.macroEnabled.12"
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +63,12 @@ def cached_template_info(data: bytes):
 
 
 @st.cache_data(show_spinner=False)
+def cached_season_template(builtin: bytes, season: bytes) -> bytes:
+    """Built-in layout + the new season's Dropdowns (IMU goals)."""
+    return update_dropdowns(builtin, season)
+
+
+@st.cache_data(show_spinner=False)
 def cached_pcn(data: bytes, name: str):
     return read_pcn(data, name)
 
@@ -82,6 +88,16 @@ def cached_renderer(data: bytes) -> CardRenderer:
     return CardRenderer(data)
 
 
+def _ekey(code: str, name: str) -> str:
+    """Versioned widget key: every saved edit / filter change mounts a fresh editor,
+    so the next edit is never lost to a data-changed reset."""
+    return f"{code}_{name}_v{st.session_state.get(f'{code}_{name}_ver', 0)}"
+
+
+def _bump(code: str, name: str) -> None:
+    st.session_state[f"{code}_{name}_ver"] = st.session_state.get(f"{code}_{name}_ver", 0) + 1
+
+
 def _h(b: bytes) -> str:
     return hashlib.sha1(b).hexdigest()[:12]
 
@@ -89,14 +105,14 @@ def _h(b: bytes) -> str:
 # ---------------------------------------------------------------------------
 # item table editing (edits survive filtering)
 # ---------------------------------------------------------------------------
-EDIT_COLS = ["selected", "style", "photo", "description", "issues", "program", "first_cost", "retail", "duty", "imu_flag",
+EDIT_COLS = ["selected", "style", "photo", "description", "issues", "subclass", "first_cost", "retail", "duty",
              "sample_date", "ly_dpci", "ly_cost", "ly_retail", "ly_duty", "comments",
              "pcn_item_id", "spark_pid", "apex_id", "country", "dpci", "subclass_name", "factory"]
-EDITABLE = {"selected", "program", "sample_date", "ly_dpci", "ly_cost", "ly_retail", "ly_duty", "comments"}
+EDITABLE = {"selected", "subclass", "sample_date", "ly_dpci", "ly_cost", "ly_retail", "ly_duty", "comments"}
 
 
 def _apply_edits(code: str):
-    key = f"{code}_editor"
+    key = _ekey(code, "editor")
     master = st.session_state[f"{code}_df"]
     shown = st.session_state.get(f"{code}_shown_index", [])
     state = st.session_state.get(key, {})
@@ -105,22 +121,29 @@ def _apply_edits(code: str):
             continue
         idx = shown[int(pos)]
         for col, val in changes.items():
-            if col in EDITABLE:
-                master.at[idx, col] = val
+            if col not in EDITABLE:
+                continue
+            if col == "subclass":
+                if master.at[idx, "subclass_pcn"]:
+                    continue                                          # PCN value wins
+                val = norm_subclass(val)
+                master.at[idx, "program"] = val
+            master.at[idx, col] = val
     st.session_state[f"{code}_df"] = master
+    _bump(code, "editor")
 
 
-def column_config(programs: list[str]):
+def column_config():
     return {
         "selected": st.column_config.CheckboxColumn("產生", width="small"),
         "style": st.column_config.TextColumn("MFG Style #", disabled=True),
         "photo": st.column_config.TextColumn("圖", disabled=True, width="small"),
         "description": st.column_config.TextColumn("品名", disabled=True, width="large"),
-        "program": st.column_config.SelectboxColumn("Program", options=programs or None, width="medium"),
+        "subclass": st.column_config.TextColumn("Subclass", width="small",
+                                                help="以 PCN 為準；PCN 空白的品項可在這裡填數字（例如 27）"),
         "first_cost": st.column_config.NumberColumn("First Cost", format="dollar", disabled=True),
         "retail": st.column_config.NumberColumn("Retail", format="dollar", disabled=True),
         "duty": st.column_config.NumberColumn("Duty", format="percent", disabled=True),
-        "imu_flag": st.column_config.TextColumn("IMU", disabled=True, width="small"),
         "sample_date": st.column_config.DateColumn("Sample Date", format="YYYY/MM/DD"),
         "ly_dpci": st.column_config.TextColumn("LY DPCI"),
         "ly_cost": st.column_config.NumberColumn("LY Cost", format="dollar"),
@@ -133,7 +156,7 @@ def column_config(programs: list[str]):
         "apex_id": st.column_config.TextColumn("Apex ID", disabled=True),
         "country": st.column_config.TextColumn("Country", disabled=True),
         "dpci": st.column_config.TextColumn("DPCI", disabled=True),
-        "subclass_name": st.column_config.TextColumn("Subclass", disabled=True),
+        "subclass_name": st.column_config.TextColumn("Subclass Name", disabled=True),
         "factory": st.column_config.TextColumn("Factory", disabled=True),
     }
 
@@ -176,34 +199,48 @@ def photo_panel(code, df, photos, notes, spk_images, photo_map):
 
 
 # ---------------------------------------------------------------------------
-# Sample Tag tab
+# Step ① Target new-season template: only its Dropdowns (season IMU goals set by
+# Target's Sourcing Manager) are used; layout / formulas always come from the built-in template.
+# ---------------------------------------------------------------------------
+def _sub_order(x: str):
+    m = re.search(r"(\d+)$", x or "")
+    return (0, int(m.group(1))) if m else (1, x)
+
+
+def sub_num(x) -> str:
+    """'Subclass 22' -> '22' for on-screen tables; cards / Excel keep the full text."""
+    m = re.fullmatch(r"Subclass (\d+)", str(x or ""))
+    return m.group(1) if m else str(x or "")
+
+
+def goals_for(info, df) -> dict:
+    """Season IMU+Duty Goal per Subclass (from the Dropdowns), written to the Data sheet."""
+    subs = sorted({x for x in df["subclass"] if x}, key=_sub_order)
+    return {x: info.goal(x, "imu_duty") for x in subs}
+
+
+# ---------------------------------------------------------------------------
+# main page per program
 # ---------------------------------------------------------------------------
 def sample_tag_tab(cfg):
     code = cfg.code
-    c1, c2, c3 = st.columns(3)
+    builtin_bytes = cfg.template_path.read_bytes()
+    c0, c1, c2 = st.columns(3)
+    with c0:
+        newtpl = st.file_uploader("① Target 新一季範本（IMU 目標）", type=["xlsx", "xlsm"], key=f"{code}_newtpl",
+                                  help="Target Sourcing Manager 提供的新一季 Sample Tag 範本，只取用其中的 IMU 目標（Dropdowns）；"
+                                       "卡片版面、公式一律以內建範本為準。未放入時沿用內建範本的 IMU 目標。")
     with c1:
-        pcn_file = st.file_uploader("① PCN（必填）", type=["xlsx"], key=f"{code}_pcn",
+        pcn_file = st.file_uploader("② PCN（必填）", type=["xlsx"], key=f"{code}_pcn",
                                     help="Target PCN 匯出檔，例如「2027 C5 D53 WSc - Boo Basket & Wrap.xlsx」")
     with c2:
-        pic_files = st.file_uploader("② 產品圖片（選填）", key=f"{code}_pics", accept_multiple_files=True,
+        pic_files = st.file_uploader("③ 產品圖片（選填）", key=f"{code}_pics", accept_multiple_files=True,
                                      type=["xlsx", "zip"] + [e.lstrip(".") for e in images.IMAGE_EXT],
                                      help="可放：圖檔（可多選）、ZIP（內含圖檔）、或 SPK Excel。"
                                           "檔名含 MFG Style / DPCI / PCN Item ID 就會自動對應；對不到的可在下方手動指定。")
-    with c3:
-        tpl_file = st.file_uploader("③ Target 範本（選填）", type=["xlsx", "xlsm"], key=f"{code}_tpl",
-                                    help=f"不上傳就用內建範本：{cfg.template_file}")
 
-    override = st.session_state.get(f"{code}_template_override")
-    if tpl_file is not None:
-        tpl_bytes, tpl_name = tpl_file.getvalue(), tpl_file.name
-    elif override:
-        tpl_bytes, tpl_name = override
-    else:
-        tpl_bytes, tpl_name = cfg.template_path.read_bytes(), cfg.template_file
+    tpl_bytes = cached_season_template(builtin_bytes, newtpl.getvalue()) if newtpl is not None else builtin_bytes
     info = cached_template_info(tpl_bytes)
-    programs = list(info.programs)
-    st.caption(f"範本：{tpl_name}　｜　Program {len(programs)} 個　｜　IMU 黃燈區間 "
-               f"{(info.yellow_band or cfg.default_yellow_band):.0%}　｜　廠商：{info.vendor_default.strip() or '—'}")
 
     if pcn_file is None:
         for n in cfg.notes:
@@ -215,48 +252,29 @@ def sample_tag_tab(cfg):
     if df_raw.empty:
         st.error("PCN 讀不到品項。")
         return
-
-    # ---- program rule ------------------------------------------------------
-    s1, s2 = st.columns([2, 1])
-    with s1:
-        if cfg.program_source == "filename":
-            guess = program_from_filename(pcn_file.name)
-            from core.pcn import match_program
-            matched = match_program(guess, programs)
-            opts = programs if programs else [guess]
-            idx = opts.index(matched) if matched in opts else 0
-            prog_choice = st.selectbox("Program Name（依 PCN 檔名帶出，可改）", opts, index=idx, key=f"{code}_prog")
-            if not matched:
-                st.warning(f"檔名中的「{guess or '（無）'}」對不到 Dropdowns 的 Program，請確認上方選擇。")
-            override_prog = prog_choice
-        else:
-            choice = st.selectbox("Program Name", ["依 Subclass ID 自動"] + programs, key=f"{code}_prog")
-            override_prog = None if choice.startswith("依") else choice
-    with s2:
-        basis_label = st.radio("IMU 燈號目標", [info.imu_header, info.imu_duty_header], index=1, horizontal=True,
-                               key=f"{code}_basis",
-                               help="IMU 紅黃綠燈對照 Dropdowns 的哪一欄目標。預設 IMU+Duty Goal。")
-        basis = "imu" if basis_label == info.imu_header else "imu_duty"
-    band = info.yellow_band or cfg.default_yellow_band
+    basis = "imu_duty"
+    band = info.yellow_band or cfg.default_yellow_band      # IMU light on the tag (not shown in the App)
 
     # ---- session table -------------------------------------------------------
-    sig = (_h(pcn_bytes), _h(tpl_bytes), override_prog or "")
+    sig = (_h(pcn_bytes), pcn_file.name)
     if st.session_state.get(f"{code}_sig") != sig:
-        df = assign_programs(df_raw, cfg, programs, pcn_file.name, override_prog)
-        df = flag_issues(df, info.programs)
-        df = init_editable(df)
+        df = init_editable(assign_subclass(df_raw))
         st.session_state[f"{code}_df"] = df
         st.session_state[f"{code}_sig"] = sig
         st.session_state.pop(f"{code}_out", None)
+        _bump(code, "editor")
     df = st.session_state[f"{code}_df"]
-    df = flag_issues(df, info.programs)
-    df["imu_flag"] = [imu_status({"first_cost": r.first_cost, "retail": r.retail, "duty": r.duty,
-                                  "goal": info.goal(r.program, basis)}, band) for r in df.itertuples()]
+
+    goals = goals_for(info, df)
+    df = flag_issues(df, goals)
     st.session_state[f"{code}_df"] = df
+    no_sub = int((df["style"].ne("") & df["subclass"].eq("")).sum())
+    if no_sub:
+        st.warning(f"有 {no_sub} 個品項 PCN 沒有 Subclass，請在表格的 Subclass 欄手動填入（數字即可），"
+                   "系統將自動抓取該季 IMU。可勾「只看有提醒的」快速找出。")
 
     for w in warns:
         st.warning(w)
-
     # ---- product pictures: SPK / ZIP / loose images ---------------------------
     spk_images, photos, photo_notes = None, [], []
     trim = True                      # always trim white / transparent margins (all sources)
@@ -291,15 +309,15 @@ def sample_tag_tab(cfg):
     # ---- filters -----------------------------------------------------------------
     f1, f2, f3, f4 = st.columns([2, 2, 1, 1])
     with f1:
-        progs_present = sorted(p for p in df["program"].unique() if p)
-        pf = st.multiselect("篩選 Program", progs_present, key=f"{code}_pf")
+        subs = sorted((p for p in df["subclass"].unique() if p), key=_sub_order)
+        pf = st.multiselect("篩選 Subclass", subs, format_func=sub_num, key=f"{code}_pf")
     with f2:
         q = st.text_input("搜尋（Style / 品名 / DPCI）", key=f"{code}_q")
     with f3:
         only_issue = st.checkbox("只看有提醒的", key=f"{code}_oi")
     mask = pd.Series(True, index=df.index)
     if pf:
-        mask &= df["program"].isin(pf)
+        mask &= df["subclass"].isin(pf)
     if q:
         ql = q.lower()
         mask &= (df["style"].str.lower().str.contains(ql, regex=False) |
@@ -311,20 +329,21 @@ def sample_tag_tab(cfg):
         b1, b2 = st.columns(2)
         if b1.button("全選", key=f"{code}_all", help="勾選目前篩選結果中有 MFG Style 的列"):
             df.loc[mask & df["style"].ne(""), "selected"] = True
-            st.session_state.pop(f"{code}_editor", None)
+            _bump(code, "editor")
         if b2.button("全不選", key=f"{code}_none"):
             df.loc[mask, "selected"] = False
-            st.session_state.pop(f"{code}_editor", None)
+            _bump(code, "editor")
 
     shown = df.loc[mask, EDIT_COLS]
     new_index = list(shown.index)
     if st.session_state.get(f"{code}_shown_index") != new_index:
         # rows on screen changed (filter / new PCN): pending editor deltas are positional,
         # so drop them — every edit is already saved in the master table
-        st.session_state.pop(f"{code}_editor", None)
+        _bump(code, "editor")
     st.session_state[f"{code}_shown_index"] = new_index
-    st.data_editor(shown, key=f"{code}_editor", on_change=_apply_edits, args=(code,),
-                   column_config=column_config(programs), hide_index=True, width="stretch",
+    shown = shown.assign(subclass=shown["subclass"].map(sub_num))
+    st.data_editor(shown, key=_ekey(code, "editor"), on_change=_apply_edits, args=(code,),
+                   column_config=column_config(), hide_index=True, width="stretch",
                    height=min(520, 38 + 35 * max(3, len(shown))), num_rows="fixed")
 
     df = st.session_state[f"{code}_df"]
@@ -348,7 +367,7 @@ def sample_tag_tab(cfg):
     vendor_fill = info.vendor_color(vendor)
 
     with st.expander("預覽前 4 張卡片", expanded=True):
-        cards_prev = make_cards(sel.head(4), info, basis, spk_images, photo_map)
+        cards_prev = make_cards(sel.head(4), info, basis, spk_images, photo_map, goals)
         cols = st.columns(2)
         for i, c in enumerate(cards_prev):
             img = renderer.render(c, vendor=vendor, vendor_fill=vendor_fill, goal=c["goal"], band=band)
@@ -356,7 +375,7 @@ def sample_tag_tab(cfg):
 
     if st.button(f"產生 {len(sel)} 張 Sample Tag", type="primary", key=f"{code}_go"):
         prog = st.progress(0.0, text="準備資料…")
-        cards = make_cards(sel, info, basis, spk_images, photo_map)
+        cards = make_cards(sel, info, basis, spk_images, photo_map, goals)
         prog.progress(0.05, text="產生 Excel…")
         xlsx = build_xlsx(tpl_bytes, cards, info, band)
         pngs, imgs = [], []
@@ -380,90 +399,10 @@ def sample_tag_tab(cfg):
         d1, d2, d3 = st.columns(3)
         d1.download_button("⬇️ Excel（Sample Tag）", out["xlsx"], f"{out['stem']}.xlsx", XLSX_MIME,
                            key=f"{code}_dlx", width="stretch")
-        d2.download_button("⬇️ 卡片圖片 PNG（ZIP）", out["zip"], f"{out['stem']} PNG.zip", "application/zip",
+        d2.download_button("⬇️ 每張 Tag 獨立圖片檔（PNG）", out["zip"], f"{out['stem']} PNG.zip", "application/zip",
                            key=f"{code}_dlz", width="stretch")
-        d3.download_button("⬇️ 列印 PDF（A4，每頁 8 張）", out["pdf"], f"{out['stem']}.pdf", "application/pdf",
+        d3.download_button("⬇️ 整份列印檔（PDF）", out["pdf"], f"{out['stem']}.pdf", "application/pdf",
                            key=f"{code}_dlp", width="stretch")
-
-
-# ---------------------------------------------------------------------------
-# Dropdown tab
-# ---------------------------------------------------------------------------
-def _goal_table(info) -> pd.DataFrame:
-    return pd.DataFrame([{"Program": k, info.imu_header: v.get("imu"), info.imu_duty_header: v.get("imu_duty")}
-                         for k, v in info.programs.items()])
-
-
-def dropdown_tab(cfg):
-    code = cfg.code
-    st.markdown("把 Target 新一季範本（SOURCE）的 **Dropdowns**（Program、IMU 目標、廠商清單）更新到你的工作檔（TEMPLATE）。"
-                "只改 Dropdowns 工作表內容，其他工作表、巨集、格式都原封不動。")
-    c1, c2 = st.columns(2)
-    with c1:
-        t = st.file_uploader("TEMPLATE（要被更新的工作檔）", type=["xlsx", "xlsm"], key=f"{code}_dd_t")
-    with c2:
-        s = st.file_uploader("SOURCE（Target 新一季範本）", type=["xlsx", "xlsm"], key=f"{code}_dd_s")
-
-    builtin = cached_template_info(cfg.template_path.read_bytes())
-    with st.expander(f"App 內建 {code} 範本目前的 IMU 目標（{cfg.template_file}）"):
-        st.dataframe(_goal_table(builtin), hide_index=True, width="stretch",
-                     column_config={builtin.imu_header: st.column_config.NumberColumn(format="percent"),
-                                    builtin.imu_duty_header: st.column_config.NumberColumn(format="percent")})
-        st.caption(f"黃燈區間 {(builtin.yellow_band or cfg.default_yellow_band):.0%}；廠商 {len(builtin.vendors)} 家。")
-
-    if s is None:
-        return
-    src = s.getvalue()
-    sinfo = cached_template_info(src)
-    base_info = cached_template_info(t.getvalue()) if t is not None else builtin
-    d = diff_templates(base_info, sinfo)
-
-    st.subheader("差異")
-    a, b, c = st.columns(3)
-    a.metric("新增 Program", len(d["programs_added"]))
-    b.metric("移除 Program", len(d["programs_removed"]))
-    c.metric("IMU 目標變動", len(d["goals_changed"]))
-    if d["programs_added"]:
-        st.write("新增：", "、".join(d["programs_added"]))
-    if d["programs_removed"]:
-        st.write("移除：", "、".join(d["programs_removed"]))
-    if d["goals_changed"]:
-        names = {"imu": sinfo.imu_header, "imu_duty": sinfo.imu_duty_header}
-        chg = pd.DataFrame([(p, names.get(k, k), a, b) for p, k, a, b in d["goals_changed"]],
-                           columns=["Program", "欄位", "原本", "更新後"])
-        st.dataframe(chg, hide_index=True, width="stretch",
-                     column_config={"原本": st.column_config.NumberColumn(format="percent"),
-                                    "更新後": st.column_config.NumberColumn(format="percent")})
-    if d["vendors_added"] or d["vendors_removed"]:
-        st.write("廠商新增：", "、".join(d["vendors_added"]) or "—", "　｜　廠商移除：", "、".join(d["vendors_removed"]) or "—")
-    if d["band_old"] != d["band_new"]:
-        st.write(f"黃燈區間：{d['band_old']} → {d['band_new']}")
-    if not any([d["programs_added"], d["programs_removed"], d["goals_changed"], d["vendors_added"],
-                d["vendors_removed"]]) and d["band_old"] == d["band_new"]:
-        st.success("兩份 Dropdowns 內容相同，不需要更新。")
-
-    st.dataframe(_goal_table(sinfo), hide_index=True, width="stretch",
-                 column_config={sinfo.imu_header: st.column_config.NumberColumn(format="percent"),
-                                sinfo.imu_duty_header: st.column_config.NumberColumn(format="percent")})
-
-    b1, b2 = st.columns(2)
-    if t is not None:
-        if b1.button("更新 TEMPLATE 的 Dropdowns", type="primary", key=f"{code}_dd_go"):
-            try:
-                out = update_dropdowns(t.getvalue(), src)
-                st.session_state[f"{code}_dd_out"] = (t.name, out)
-            except Exception as e:
-                st.error(f"更新失敗：{e}")
-        res = st.session_state.get(f"{code}_dd_out")
-        if res and res[0] == t.name:
-            name, out = res
-            stem, ext = os.path.splitext(name)
-            b1.download_button("⬇️ 下載更新後的 TEMPLATE", out, f"{stem}_Dropdowns更新{ext}",
-                               XLSM_MIME if ext.lower() == ".xlsm" else XLSX_MIME, key=f"{code}_dd_dl")
-    if b2.button("用這份 SOURCE 產生本次 Sample Tag", key=f"{code}_dd_use",
-                 help="本次登入期間，『產生 Sample Tag』改用這份範本（不影響內建範本）"):
-        st.session_state[f"{code}_template_override"] = (src, s.name)
-        st.success(f"已切換：{s.name}")
 
 
 # ---------------------------------------------------------------------------
@@ -471,15 +410,11 @@ def main():
     if not gate():
         return
     st.title("🏷️ Sample Tag 產生器")
-    st.caption("上傳 PCN ➜ 勾選品項 ➜ 一鍵產生 Sample Tag Excel、每張卡的 PNG 與列印 PDF。條碼為內嵌圖片，不需安裝字型、不需連網。")
+    st.caption("上傳 PCN ➜ 勾選品項／篩選 Subclass ➜ 一鍵產生 Sample Tag Excel、每張 Tag 的獨立圖片檔（PNG）、整份列印檔（PDF）")
     tabs = st.tabs([p.title for p in PROGRAMS.values()])
     for tab, cfg in zip(tabs, PROGRAMS.values()):
         with tab:
-            t1, t2 = st.tabs(["產生 Sample Tag", "Dropdown 更新"])
-            with t1:
-                sample_tag_tab(cfg)
-            with t2:
-                dropdown_tab(cfg)
+            sample_tag_tab(cfg)
 
 
 main()

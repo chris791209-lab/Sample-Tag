@@ -704,7 +704,7 @@ def _add_data_sheet(pkg: Package, cards, proto, date_style) -> None:
     pct_s = ps(8, 4)
     imu_s = ps(9, 1)
     cols = [("#", "n", None), ("MFG STYLE #", "style", txt_s), ("PRODUCT DESCRIPTION", "description", txt_s),
-            ("PROGRAM", "program", txt_s), ("PCN ITEM ID", "pcn_item_id", txt_s), ("SPARK PID", "spark_pid", txt_s),
+            ("SUBCLASS", "program", txt_s), ("PCN ITEM ID", "pcn_item_id", txt_s), ("SPARK PID", "spark_pid", txt_s),
             ("APEX ID", "apex_id", txt_s), ("DPCI", "dpci", txt_s), ("FIRST COST", "first_cost", cur_s),
             ("COST BASIS", "cost_basis", txt_s), ("PCN RETAIL", "retail", cur_s), ("COUNTRY OF EXPORT", "country", txt_s),
             ("DUTY RATE", "duty", pct_s), ("IMU", "imu", imu_s), ("IMU w/DUTY", "imu_duty", imu_s),

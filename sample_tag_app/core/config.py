@@ -34,15 +34,15 @@ PROGRAMS: dict[str, ProgramConfig] = {
         template_file="D240_Sample_Tag_Template.xlsx",
         program_source="subclass",
         default_yellow_band=0.03,
-        notes=("Program Name 依 PCN 的 Subclass ID 自動帶出（例：Subclass 27），每張卡各自對應 IMU 目標。",),
+        notes=("卡片上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 27）。",),
     ),
     "D53": ProgramConfig(
         code="D53",
         title="D53",
         template_file="D53_Sample_Tag_Template.xlsx",
-        program_source="filename",
+        program_source="subclass",
         default_yellow_band=0.04,
-        notes=("Program Name 由 PCN 檔名帶出（例：… - Boo Basket & Wrap），可在下方手動更改。",),
+        notes=("卡片上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 23）。",),
     ),
 }
 
