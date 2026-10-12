@@ -9,8 +9,21 @@ import re
 import os
 from datetime import date
 
+import sys
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
+
+# Streamlit Cloud re-runs app.py after a GitHub update but keeps already-imported
+# core.* modules in memory, so new names (e.g. norm_subclass) fail to import until
+# a reboot. Drop core.* whenever any core file changed so the new code is loaded.
+_CORE = Path(__file__).with_name("core")
+_sig = tuple(sorted((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in _CORE.glob("*.py")))
+if getattr(sys, "_sample_tag_core_sig", None) != _sig:
+    for _m in [m for m in sys.modules if m == "core" or m.startswith("core.")]:
+        del sys.modules[_m]
+    sys._sample_tag_core_sig = _sig
 
 from core import images, spk
 from core.config import PROGRAMS
