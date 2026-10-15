@@ -22,6 +22,13 @@ def _key(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (s or "").lower())
 
 
+def sub_no(name: str) -> int | None:
+    """Subclass number from the many ways Target writes it:
+    'Subclass 35', 'SC35 TOT', 'SC 9 Kids Costume Kits', '35' -> 35."""
+    m = re.match(r"\s*(?:sub\s*class|subclass|sc|sub)?\s*0*(\d+)\b", name or "", re.I)
+    return int(m.group(1)) if m else None
+
+
 @dataclass
 class TemplateInfo:
     programs: dict[str, dict] = field(default_factory=dict)   # name -> {"imu":x, "imu_duty":y, "row":n}
@@ -42,6 +49,13 @@ class TemplateInfo:
                 if _key(name) == k:
                     p = v
                     break
+        if p is None:
+            n = sub_no(program)          # PCN 'Subclass 35' vs Dropdowns 'SC35 TOT'
+            if n is not None:
+                for name, v in self.programs.items():
+                    if sub_no(name) == n:
+                        p = v
+                        break
         if not p:
             return None
         return p.get(basis)
@@ -52,6 +66,11 @@ class TemplateInfo:
         but keep spaces ("Lucky Star " != "Lucky Star"). Highest-priority match wins."""
         v = (vendor or "").lower()
         hits = [r for r in self.vendor_rules if r[1].lower() == v]
+        if not hits:
+            # a new season's Dropdowns may spell the vendor without the built-in
+            # template's trailing space ("Lucky Star" vs "Lucky Star ") — still the same vendor
+            v = v.strip()
+            hits = [r for r in self.vendor_rules if r[1].strip().lower() == v]
         return min(hits)[2] if hits else None
 
 
