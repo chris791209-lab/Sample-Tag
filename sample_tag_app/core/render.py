@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from .builder import FIELD_MSG, imu_value
 from .colors import hex_to_rgb, parse_theme, resolve, resolve_xml_color
 from .config import BLOCK_START, CARD_COLS, CARD_ROWS, FONT_DIR, LEFT_COL
+from .fit import TARGET_PT, WRAP, card_boxes, fit_size
 from .layout import (BARCODE_BOX, FIELD_CELLS, IMU_CELLS, RETAIL_ECHO, THUMB_BOX, THUMB_CELL,
                      VENDOR_CELL, Geometry, parse_range)
 from .xlsxpkg import Package
@@ -75,6 +76,7 @@ class CardRenderer:
         # same tweaks the workbook builder applies
         self.cells[(2, 4)]["fmt"] = "yyyy/mm/dd"     # sample date
         self.cells[(2, 1)]["wrap"] = True            # description
+        self.boxes = card_boxes(sheet_xml, self.geo)  # fitted (bigger) data-cell fonts, as in the workbook
         # merges inside the prototype card
         self.merges = []
         for m in re.findall(r'<mergeCell ref="([^"]+)"/>', sheet_xml):
@@ -193,6 +195,10 @@ class CardRenderer:
                 bold = True
             if fill:
                 d.rectangle([x0, y0, x1, y1], fill="#" + fill)
+            if (dr, dc) in TARGET_PT and not self._is_blank(v):
+                w, h = self.boxes[(dr, dc)]
+                size = fit_size((dr, dc), v, fmt=st["fmt"], bold=bold, wrap=(dr, dc) in WRAP,
+                                w_px=w, h_pt=h, base_pt=size) or size
             if not self._is_blank(v):
                 self._text(d, (x0, y0, x1, y1), v, st, bold, italic, size, color)
 

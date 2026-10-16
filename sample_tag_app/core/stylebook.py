@@ -17,6 +17,8 @@ class StyleBook:
         self.numfmts = re.findall(r"<numFmt\b[^>]*/>", nf.group(1)) if nf else []
         dx = re.search(r"<dxfs count=\"\d+\">(.*?)</dxfs>", xml, re.S)
         self.dxfs = re.findall(r"<dxf>.*?</dxf>|<dxf/>", dx.group(1), re.S) if dx else []
+        fo = re.search(r"<fonts count=\"\d+\"[^>]*>(.*?)</fonts>", xml, re.S)
+        self.fonts = re.findall(r"<font>.*?</font>|<font/>", fo.group(1), re.S) if fo else []
         self._cache: dict[tuple, int] = {}
 
     # ---- pieces ----------------------------------------------------------------
@@ -36,6 +38,33 @@ class StyleBook:
         self.fills.append(x)
         return len(self.fills) - 1
 
+    def font_id(self, base: int, size: float) -> int:
+        """Copy font `base` with a new size (bold / colour / name kept)."""
+        f = self.fonts[base] if base < len(self.fonts) else "<font/>"
+        sz = f'<sz val="{size:g}"/>'
+        if f == "<font/>":
+            f = f"<font>{sz}</font>"
+        elif "<sz " in f:
+            f = re.sub(r'<sz val="[^"]*"/>', sz, f, count=1)
+        else:
+            f = f.replace("<font>", "<font>" + sz, 1)
+        # fitted cells use Calibri: its metrics are known (Carlito twin), so the size we
+        # compute is exactly what Excel draws. The template's Aptos is wider and not bundled.
+        f = re.sub(r'<name val="[^"]*"/>', '<name val="Calibri"/>', f)
+        f = re.sub(r'<scheme val="[^"]*"/>', "", f)
+        if "<name " not in f:
+            f = f.replace("</font>", '<name val="Calibri"/><family val="2"/></font>')
+        if f in self.fonts:
+            return self.fonts.index(f)
+        self.fonts.append(f)
+        return len(self.fonts) - 1
+
+    def font_size(self, idx: int) -> float:
+        m = re.search(r'fontId="(\d+)"', self.xfs[idx])
+        f = self.fonts[int(m.group(1))] if m and int(m.group(1)) < len(self.fonts) else ""
+        s = re.search(r'<sz val="([0-9.]+)"/>', f)
+        return float(s.group(1)) if s else 11.0
+
     def add_dxf(self, dxf_xml: str) -> int:
         if dxf_xml in self.dxfs:
             return self.dxfs.index(dxf_xml)
@@ -44,8 +73,8 @@ class StyleBook:
 
     # ---- xf clone ------------------------------------------------------------
     def clone(self, idx: int, *, fill_rgb: str | None = None, wrap: bool | None = None,
-              numfmt: str | None = None) -> int:
-        key = (idx, fill_rgb, wrap, numfmt)
+              numfmt: str | None = None, font_size: float | None = None) -> int:
+        key = (idx, fill_rgb, wrap, numfmt, font_size)
         if key in self._cache:
             return self._cache[key]
         xf = self.xfs[idx]
@@ -53,6 +82,10 @@ class StyleBook:
             fid = self.fill_id(fill_rgb)
             xf = self._set_attr(xf, "fillId", str(fid))
             xf = self._set_attr(xf, "applyFill", "1")
+        if font_size:
+            m = re.search(r'fontId="(\d+)"', xf)
+            xf = self._set_attr(xf, "fontId", str(self.font_id(int(m.group(1)) if m else 0, font_size)))
+            xf = self._set_attr(xf, "applyFont", "1")
         if numfmt:
             nid = self.numfmt_id(numfmt)
             xf = self._set_attr(xf, "numFmtId", str(nid))
@@ -88,6 +121,10 @@ class StyleBook:
         if re.search(r"<fills count=", x):
             x = re.sub(r"<fills count=\"\d+\">.*?</fills>",
                        lambda _: f'<fills count="{len(self.fills)}">' + "".join(self.fills) + "</fills>", x, count=1, flags=re.S)
+        if self.fonts:
+            x = re.sub(r"<fonts count=\"\d+\"([^>]*)>.*?</fonts>",
+                       lambda m: f'<fonts count="{len(self.fonts)}"{m.group(1)}>' + "".join(self.fonts) + "</fonts>",
+                       x, count=1, flags=re.S)
         if self.dxfs:
             block = f'<dxfs count="{len(self.dxfs)}">' + "".join(self.dxfs) + "</dxfs>"
             if re.search(r"<dxfs\b", x):

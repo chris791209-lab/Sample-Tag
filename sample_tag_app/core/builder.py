@@ -19,6 +19,7 @@ from PIL import Image
 import io
 
 from .config import BLOCK_ROWS, BLOCK_START, BLOCKS_PER_PAGE, CARD_COLS, LAST_COL, LEFT_COL, RIGHT_COL
+from .fit import FIELD_FMT, TARGET_PT, WRAP, card_boxes, card_value, fit_size
 from .layout import (BARCODE_BOX, EMU_PER_PT, EMU_PER_PX, FIELD_CELLS, IMU_CELLS, NUMERIC_FIELDS,
                      RETAIL_ECHO, THUMB_BOX, THUMB_CELL, VENDOR_CELL, Geometry, card_origin,
                      excel_serial, in_proto_card, parse_range, ref, shift_formula, shift_range)
@@ -128,6 +129,16 @@ def build_workbook(template_bytes: bytes, cards: list[dict], *, vendor: str,
         for dc in range(CARD_COLS):
             style_over[(0, dc)] = book.clone(sidx(0, dc), fill_rgb=vendor_fill)
     date_style = style_over[(2, 4)]
+    # bigger, auto-fitted fonts for the data cells (never wider/taller than the cell)
+    boxes = card_boxes(sx, geo)
+
+    def fitted_style(key, card):
+        base = style_over.get(key, sidx(*key))
+        fx = book.fonts[int(re.search(r'fontId="(\d+)"', book.xfs[base]).group(1))] if 'fontId="' in book.xfs[base] else ""
+        w, h = boxes[key]
+        pt = fit_size(key, card_value(key, card), fmt=FIELD_FMT.get(key, "@"), bold="<b/>" in fx or '<b val="1"/>' in fx,
+                      wrap=key in WRAP, w_px=w, h_pt=h, base_pt=-1)
+        return book.clone(base, font_size=pt) if pt else base
 
     n = len(cards)
     nblocks = max(1, math.ceil(n / 2))
@@ -153,9 +164,15 @@ def build_workbook(template_bytes: bytes, cards: list[dict], *, vendor: str,
                     if side_card >= n:
                         continue                      # odd count: no empty right card
                     pa, pi = proto.get((dr, LEFT_COL + dc), ("", None))
-                    if (dr, dc) in style_over:
+                    ds = date_style
+                    if (dr, dc) in TARGET_PT:
+                        fs = fitted_style((dr, dc), cards[side_card])
+                        pa = re.sub(r'\ss="\d+"', "", pa or "") + f' s="{fs}"'
+                        if (dr, dc) == (2, 4):
+                            ds = fs
+                    elif (dr, dc) in style_over:
                         pa = re.sub(r'\ss="\d+"', "", pa or "") + f' s="{style_over[(dr, dc)]}"'
-                    cells.append(_card_cell(r, col, dr, dc, pa, pi, cards[side_card], vendor, date_style))
+                    cells.append(_card_cell(r, col, dr, dc, pa, pi, cards[side_card], vendor, ds))
                 else:
                     pa, pi = proto.get((dr, col), (None, None))
                     if pa is not None:
