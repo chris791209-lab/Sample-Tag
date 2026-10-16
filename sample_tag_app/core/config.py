@@ -33,7 +33,7 @@ PROGRAMS: dict[str, ProgramConfig] = {
         title="D240",
         template_file="D240_Sample_Tag_Template.xlsx",
         program_source="subclass",
-        default_yellow_band=0.03,
+        default_yellow_band=0.04,
         notes=("Sample Tag 上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 27）。",),
     ),
     "D53": ProgramConfig(

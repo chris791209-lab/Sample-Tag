@@ -40,6 +40,10 @@ class TemplateInfo:
     theme: list[str] = field(default_factory=list)
     imu_header: str = "IMU Goal"
     imu_duty_header: str = "IMU+Duty Goal"
+    # The "IMU GOALS" box on the Instructions sheet (what the SM shows the vendor):
+    # which Dropdowns goal column it sums, and its yellow band ("=J6-0.04").
+    box_basis: str | None = None
+    box_band: float | None = None
 
     def goal(self, program: str, basis: str = "imu") -> float | None:
         p = self.programs.get(program)
@@ -88,7 +92,10 @@ def parse_template(data: bytes) -> TemplateInfo:
     info.theme = parse_theme(pkg.text("xl/theme/theme1.xml") if pkg.has("xl/theme/theme1.xml") else None)
 
     ins = _find_sheet(wb, "Instructions")
+    box_col = None
     if ins is not None:
+        box_col, info.box_band = _imu_box(ins)
+
         info.vendor_default = "" if ins["B4"].value is None else str(ins["B4"].value)   # raw: Excel colour rules are space-sensitive
         info.program_default = _s(ins["B5"].value)
 
@@ -135,6 +142,8 @@ def parse_template(data: bytes) -> TemplateInfo:
                     rec[k] = None
             info.programs[name] = rec
             r += 1
+        if box_col is not None:
+            info.box_basis = next((k for k, cc in goal_cols.items() if cc == box_col), None)
 
     # ---- yellow band: "=M6-0.03" next to the "Yellow" label ------------
     if yellow is not None:
@@ -163,6 +172,37 @@ def parse_template(data: bytes) -> TemplateInfo:
     # ---- vendor header colours from the Template sheet's CF --------------
     info.vendor_rules = _vendor_rules(pkg, info.theme, vend_rows, vend_hdr.column if vend_hdr else 4)
     return info
+
+
+def _band_from(f: str) -> float | None:
+    m = re.search(r"-\s*([0-9.]+)\s*$", f or "")
+    if (f or "").startswith("=") and m and "E" not in m.group(1).upper():
+        try:
+            v = float(m.group(1))
+            return v if 0 < v < 0.5 else None
+        except ValueError:
+            return None
+    return None
+
+
+def _imu_box(ins) -> tuple[int | None, float | None]:
+    """Instructions 'IMU GOALS' box: Green row '=SUMIF(Dropdowns!G..,B5,Dropdowns!H3:H19)'
+    -> goal column index (H=8); Yellow row '=J6-0.04' -> 0.04."""
+    col = band = None
+    for row in ins.iter_rows(min_row=1, max_row=min(ins.max_row, 30)):
+        for c in row:
+            lab = _s(c.value).lower()
+            if lab not in ("green", "yellow"):
+                continue
+            for dc in (1, 2):
+                f = _s(ins.cell(c.row, c.column + dc).value)
+                if lab == "green" and col is None:
+                    m = re.search(r"SUMIF\([^,]+,[^,]+,\s*Dropdowns!\$?([A-Z]+)\$?\d+", f, re.I)
+                    if m:
+                        col = openpyxl.utils.column_index_from_string(m.group(1).upper())
+                if lab == "yellow" and band is None:
+                    band = _band_from(f)
+    return col, band
 
 
 def _vendor_rules(pkg: Package, theme, vend_rows: dict, vend_col: int) -> list:
