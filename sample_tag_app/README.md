@@ -8,7 +8,9 @@
 | **Sample Tag PNG（ZIP）** | 每張 Sample Tag 一張圖，檔名 `001_HWD704A.png`。取代原本的 `BatchExportScreenshots_Safe` 截圖巨集：只畫有資料的 Sample Tag、不會白圖、不需要開 Excel。 |
 | **列印 PDF** | A4 直式、每頁 8 張（與 Target 範本列印版面相同）。 |
 
-每季生成 Sample Tag 的第一步是放入 Target 新一季範本：只取用它的 Dropdowns（該季 IMU Goal，由 Target Sourcing Manager 訂定），Sample Tag 版面、公式一律以內建範本為準。Tag 上的 IMU 欄位依該季 IMU+Duty Goal 上紅黃綠底色；App 畫面不顯示燈號，保持簡潔。
+每季生成 Sample Tag 的第一步是放入 Target 新一季範本：只取用它的 Dropdowns（該季 IMU Goal，由 Target Sourcing Manager 訂定），Sample Tag 版面、公式一律以內建範本為準。Tag 上的 IMU 欄位依範本 Instructions 工作表「IMU GOALS」說明框的門檻上紅黃綠底色（綠 ≥ 該 Subclass 的 IMU Goal、黃 = 低於目標 4% 以內〔依說明框公式，例：Subclass 7 → 綠 ≥ 66.52%、黃 62.52%～66.52%〕、其餘紅），IMU 與 IMU w/Duty 兩格同一門檻；App 畫面不顯示燈號，保持簡潔。
+
+> 註：Target 範本本身 Tag 上的條件式格式其實是接 Dropdowns 的 IMU+Duty Goal、黃燈 3%，跟說明框不一致；App 依說明框為準。
 
 ---
 
@@ -37,7 +39,7 @@ streamlit run app.py
 
 D240、D53 分頁操作完全相同：
 
-1. **① Target 新一季範本（更新 IMU Goal）**：放入 Target Sourcing Manager 給的新一季 Sample Tag 範本，App 只取用其中的 Dropdowns（該季 IMU Goal），用於 Tag 上 IMU 的紅黃綠底色，並寫進產出 Excel 的 `Dropdowns` 工作表與 `Data` 工作表的 IMU GOAL 欄。沒放時沿用內建範本的 Dropdowns。
+1. **① Target 新一季範本（更新 IMU Goal）**：放入 Target Sourcing Manager 給的新一季 Sample Tag 範本，App 只取用其中的 Dropdowns（該季 IMU Goal），用於 Tag 上 IMU 的紅黃綠底色（門檻以新範本說明框為準），並寫進產出 Excel 的 `Dropdowns` 工作表與 `Data` 工作表的 IMU GOAL 欄。沒放時沿用內建範本的 Dropdowns。
 2. **② PCN**（例：`2027 C5 D240 Halloween Decor & Night Of.xlsx`）。
    - Sample Tag 上的 **Subclass** 一律以 PCN 的 Subclass ID 為準（Sample Tag 印 `Subclass 27`，畫面表格與篩選只顯示數字 `27`）。
    - **PCN 沒填 Subclass 的品項**：「待確認」欄顯示「缺 Subclass（可在 Subclass 欄填入）」，直接在 Subclass 欄輸入數字（例如 `27`）。PCN 有值的品項以 PCN 為準，不能改。

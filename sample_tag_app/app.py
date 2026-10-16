@@ -225,10 +225,10 @@ def sub_num(x) -> str:
     return m.group(1) if m else str(x or "")
 
 
-def goals_for(info, df) -> dict:
-    """Season IMU+Duty Goal per Subclass (from the Dropdowns), written to the Data sheet."""
+def goals_for(info, df, basis) -> dict:
+    """Season IMU goal per Subclass (from the Dropdowns), used for the tag colours and the Data sheet."""
     subs = sorted({x for x in df["subclass"] if x}, key=_sub_order)
-    return {x: info.goal(x, "imu_duty") for x in subs}
+    return {x: info.goal(x, basis) for x in subs}
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +253,9 @@ def sample_tag_tab(cfg):
 
     tpl_bytes = cached_season_template(builtin_bytes, newtpl.getvalue()) if newtpl is not None else builtin_bytes
     info = cached_template_info(tpl_bytes)
+    # IMU colours follow the "IMU GOALS" box on the season template's Instructions sheet
+    # (goal column + yellow band the SM shows), not the template's own CF wiring.
+    box = cached_template_info(newtpl.getvalue()) if newtpl is not None else info
 
     if pcn_file is None:
         for n in cfg.notes:
@@ -264,8 +267,8 @@ def sample_tag_tab(cfg):
     if df_raw.empty:
         st.error("PCN 讀不到品項。")
         return
-    basis = "imu_duty"
-    band = info.yellow_band or cfg.default_yellow_band      # IMU light on the tag (not shown in the App)
+    basis = box.box_basis or info.box_basis or "imu"
+    band = box.box_band or info.box_band or cfg.default_yellow_band   # IMU light on the tag (not shown in the App)
 
     # ---- session table -------------------------------------------------------
     sig = (_h(pcn_bytes), pcn_file.name)
@@ -277,7 +280,7 @@ def sample_tag_tab(cfg):
         _bump(code, "editor")
     df = st.session_state[f"{code}_df"]
 
-    goals = goals_for(info, df)
+    goals = goals_for(info, df, basis)
     df = flag_issues(df, goals)
     st.session_state[f"{code}_df"] = df
     no_sub = int((df["style"].ne("") & df["subclass"].eq("")).sum())
