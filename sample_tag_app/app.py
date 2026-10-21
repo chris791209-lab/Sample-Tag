@@ -28,7 +28,8 @@ if getattr(sys, "_sample_tag_core_sig", None) != _sig:
 from core import images, spk
 from core.config import PROGRAMS
 from core.dropdowns import parse_template, update_dropdowns
-from core.pcn import assign_subclass, flag_issues, init_editable, norm_subclass, read_pcn
+from core.pcn import (assign_subclass, flag_issues, init_editable, match_program, norm_subclass,
+                      program_from_filename, read_pcn)
 from core.pipeline import build_xlsx, make_cards, output_stem, png_zip, safe_name
 from core.render import CardRenderer, cards_pdf, to_png_bytes
 
@@ -140,7 +141,8 @@ def _apply_edits(code: str):
                 if master.at[idx, "subclass_pcn"]:
                     continue                                          # PCN value wins
                 val = norm_subclass(val)
-                master.at[idx, "program"] = val
+                if PROGRAMS[code].program_source == "subclass":
+                    master.at[idx, "program"] = val
             master.at[idx, col] = val
     st.session_state[f"{code}_df"] = master
     _bump(code, "editor")
@@ -226,9 +228,28 @@ def sub_num(x) -> str:
 
 
 def goals_for(info, df, basis) -> dict:
-    """Season IMU goal per Subclass (from the Dropdowns), used for the tag colours and the Data sheet."""
-    subs = sorted({x for x in df["subclass"] if x}, key=_sub_order)
-    return {x: info.goal(x, basis) for x in subs}
+    """Season IMU goal per Program Name on the tag (D240: 'Subclass N'; D53: a Dropdowns
+    program such as 'Boo Basket & Wrap'), used for the tag colours and the Data sheet."""
+    progs = sorted({x for x in df["program"] if x}, key=_sub_order)
+    return {x: info.goal(x, basis) for x in progs}
+
+
+def program_picker(code, info, pcn_name) -> str:
+    """D53: one Program Name for the whole PCN, from the season Dropdowns list."""
+    opts = [p for p in info.programs]
+    guess = match_program(program_from_filename(pcn_name), opts)
+    key = f"{code}_program"
+    if st.session_state.get(f"{code}_program_for") != pcn_name:      # new PCN -> re-guess
+        st.session_state[f"{code}_program_for"] = pcn_name
+        st.session_state[key] = guess
+    if st.session_state.get(key) not in opts:
+        st.session_state[key] = None
+    choice = st.selectbox("Program Name（顯示在 Sample Tag 第 2 行，同範本下拉選單）", opts, key=key,
+                          index=None, placeholder="請選擇 Program Name",
+                          help="依 PCN 檔名自動帶入（例：「… - Boo Basket & Wrap.xlsx」）；IMU Goal 也依此 Program 抓取。")
+    if not choice:
+        st.warning("請選擇 Program Name，Sample Tag 第 2 行與 IMU 底色才會帶出。")
+    return choice or ""
 
 
 # ---------------------------------------------------------------------------
@@ -279,12 +300,15 @@ def sample_tag_tab(cfg):
         st.session_state.pop(f"{code}_out", None)
         _bump(code, "editor")
     df = st.session_state[f"{code}_df"]
+    by_subclass = cfg.program_source == "subclass"
+    if not by_subclass:
+        df["program"] = program_picker(code, info, pcn_file.name)
 
     goals = goals_for(info, df, basis)
-    df = flag_issues(df, goals)
+    df = flag_issues(df, goals, need_subclass=by_subclass)
     st.session_state[f"{code}_df"] = df
     no_sub = int((df["style"].ne("") & df["subclass"].eq("")).sum())
-    if no_sub:
+    if no_sub and by_subclass:
         st.warning(f"有 {no_sub} 個品項 PCN 沒有 Subclass，請在表格的 Subclass 欄手動填入（數字即可），"
                    "系統將自動抓取該季 IMU。可勾「只看待確認」快速找出。")
 

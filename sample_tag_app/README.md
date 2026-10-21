@@ -37,7 +37,7 @@ streamlit run app.py
 
 ## 使用流程 / Workflow
 
-D240、D53 分頁操作完全相同：
+D240、D53 分頁操作相同，差別只在 Sample Tag 第 2 行（見下方 D53 說明）：
 
 1. **① Target 新一季範本（更新 IMU Goal）**：放入 Target Sourcing Manager 給的新一季 Sample Tag 範本，App 只取用其中的 Dropdowns（該季 IMU Goal），用於 Tag 上 IMU 的紅黃綠底色（門檻以新範本說明框為準），並寫進產出 Excel 的 `Dropdowns` 工作表與 `Data` 工作表的 IMU GOAL 欄。沒放時沿用內建範本的 Dropdowns。
 2. **② PCN**（例：`2027 C5 D240 Halloween Decor & Night Of.xlsx`）。
@@ -48,7 +48,7 @@ D240、D53 分頁操作完全相同：
 4. 在表格中勾選要生成的品項（可用「篩選 Subclass」／搜尋縮小範圍；**只會生成目前篩選結果中有勾選的品項**，畫面上看到什麼就生成什麼），可填 Sample Date、LY DPCI / LY Cost / LY Retail / LY Duty、Comments。
 5. 按「生成 N 張 Sample Tag」→ 下載 Excel / PNG / PDF。
 
-> 目前內建的 D53 範本 Dropdowns 只有 Program 名稱、沒有 Subclass 目標，D53 需放入 Target 新一季範本，Tag 上的 IMU 才會上底色。
+> **D53**：Sample Tag 第 2 行顯示 **Program Name**（與範本下拉選單相同，例：Sugar Paper／Boo Basket & Wrap／Fall），不是 Subclass。上傳 PCN 後 App 依檔名（「… - Boo Basket & Wrap.xlsx」）自動選好，畫面上的「Program Name」下拉可改；IMU Goal 也依此 Program 抓取。PCN 的 Subclass 仍保留在表格與 `Data` 工作表，可用來篩選。
 
 ### 產品圖片 / Product photos
 
@@ -91,7 +91,7 @@ D240、D53 分頁操作完全相同：
 | PCN RETAIL | Suggested Unit Retail |
 | COUNTRY OF EXPORT | Import Country of Origin |
 | DUTY RATE | Duty Rate % |
-| Subclass（Sample Tag 第 2 行） | Subclass ID → `Subclass N`（空白時可在表格手動填） |
+| Sample Tag 第 2 行 | D240：Subclass ID → `Subclass N`（空白時可在表格手動填）；D53：Program Name（範本下拉選單，依 PCN 檔名預選） |
 
 ---
 
