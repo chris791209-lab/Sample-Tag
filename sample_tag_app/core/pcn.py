@@ -198,7 +198,7 @@ def assign_subclass(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def flag_issues(df: pd.DataFrame, goals: dict) -> pd.DataFrame:
+def flag_issues(df: pd.DataFrame, goals: dict, need_subclass: bool = True) -> pd.DataFrame:
     """goals = {"Subclass 27": 0.714, ...} (IMU+Duty Goal actually used)."""
     """Per-row data-quality notes shown in the app (and only there)."""
     df = df.copy()
@@ -220,7 +220,7 @@ def flag_issues(df: pd.DataFrame, goals: dict) -> pd.DataFrame:
             n.append("缺零售價")
         if r.get("duty") is None or pd.isna(r.get("duty")):
             n.append("缺 Duty")
-        if not r.get("subclass"):
+        if need_subclass and not r.get("subclass"):
             n.append("缺 Subclass（可在 Subclass 欄填入）")
         notes.append("、".join(n))
     df["issues"] = notes

@@ -13,7 +13,7 @@ from . import barcode_img, spk
 from .builder import build_workbook, imu_value
 from .dropdowns import TemplateInfo
 
-CARD_KEYS = ["style", "description", "program", "pcn_item_id", "spark_pid", "apex_id", "first_cost",
+CARD_KEYS = ["style", "description", "program", "subclass", "pcn_item_id", "spark_pid", "apex_id", "first_cost",
              "cost_basis", "retail", "country", "duty", "sample_date", "ly_dpci", "ly_cost", "ly_retail",
              "ly_duty", "comments", "dpci", "subclass_name", "factory"]
 

@@ -729,6 +729,11 @@ def _add_data_sheet(pkg: Package, cards, proto, date_style) -> None:
             ("LAST YEAR DPCI", "ly_dpci", txt_s), ("LY FIRST COST", "ly_cost", cur_s), ("LY RETAIL", "ly_retail", cur_s),
             ("LY DUTY RATE", "ly_duty", pct_s), ("COMMENTS", "comments", txt_s)]
     widths = [5, 16, 48, 18, 13, 13, 11, 14, 12, 11, 12, 18, 11, 10, 11, 10, 13, 15, 13, 12, 12, 40]
+    if any(c.get("subclass") and c.get("subclass") != c.get("program") for c in cards):
+        # D53: row 3 of the tag is a Dropdowns Program Name, not the Subclass -> keep both
+        cols[3] = ("PROGRAM NAME", "program", txt_s)
+        cols.insert(4, ("SUBCLASS", "subclass", txt_s))
+        widths.insert(4, 14)
     rows = []
     hdr = "".join(f'<c r="{ref(1, j + 1)}"{hdr_s} t="inlineStr"><is><t>{_x(h)}</t></is></c>' for j, (h, _, _) in enumerate(cols))
     rows.append(f'<row r="1" ht="30" customHeight="1">{hdr}</row>')

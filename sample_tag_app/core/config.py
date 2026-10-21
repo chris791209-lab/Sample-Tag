@@ -16,8 +16,9 @@ class ProgramConfig:
     title: str                     # tab title
     template_file: str             # bundled Target template (Instructions/Template/Dropdowns)
     # How each card's "Program Name" (card row 3, and the IMU-goal lookup key) is found:
-    #   "subclass" -> "Subclass <Subclass ID>" from the PCN row   (D240)
-    #   "filename" -> the part of the PCN file name after " - "   (D53)
+    #   "subclass" -> "Subclass <Subclass ID>" from the PCN row                       (D240)
+    #   "dropdown" -> a Program Name from the season template's Dropdowns list, picked once
+    #                 per PCN (pre-selected from the PCN file name, e.g. "… - Boo Basket & Wrap") (D53)
     program_source: str
     default_yellow_band: float     # used only if the Dropdowns sheet has no band formula
     notes: tuple[str, ...] = field(default_factory=tuple)
@@ -40,9 +41,10 @@ PROGRAMS: dict[str, ProgramConfig] = {
         code="D53",
         title="D53",
         template_file="D53_Sample_Tag_Template.xlsx",
-        program_source="subclass",
+        program_source="dropdown",
         default_yellow_band=0.04,
-        notes=("Sample Tag 上的 Subclass 依 PCN 的 Subclass ID 帶出（例：Subclass 23）。",),
+        notes=("Sample Tag 第 2 行顯示 Program Name（同範本下拉選單，例：Boo Basket & Wrap），"
+               "上傳 PCN 後依檔名自動帶入，可再更改。",),
     ),
 }
 
